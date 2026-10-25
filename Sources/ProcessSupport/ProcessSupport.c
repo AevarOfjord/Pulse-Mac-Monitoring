@@ -27,18 +27,21 @@ int pulse_read_process(int32_t pid, PulseProcessInfo *info) {
     if (proc_pid_rusage(pid, RUSAGE_INFO_V4, (rusage_info_t *)&usage) == 0) {
         info->has_usage = 1;
         info->has_resident = 1;
-        // rusage CPU counters use Mach absolute-time units on Apple silicon.
-        // XNU: osfmk/kern/bsd_kern.c fill_task_rusage -> task_power_info_locked.
-        mach_timebase_info_data_t timebase;
-        mach_timebase_info(&timebase);
-        __uint128_t nanos = ((__uint128_t)usage.ri_user_time + usage.ri_system_time) * timebase.numer / timebase.denom;
-        info->cpu_nanoseconds = nanos > UINT64_MAX ? UINT64_MAX : (uint64_t)nanos;
         info->resident_bytes = usage.ri_resident_size;
         info->footprint_bytes = usage.ri_phys_footprint;
         info->peak_footprint_bytes = usage.ri_lifetime_max_phys_footprint;
-    } else {
-        struct proc_taskinfo task = {0};
-        if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, sizeof(task)) == sizeof(task)) {
+    }
+    struct proc_taskinfo task = {0};
+    if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, sizeof(task)) == sizeof(task)) {
+        // XNU fill_taskprocinfo exposes explicit Mach absolute-time totals.
+        // Keep CPU availability independent of footprint/rusage access.
+        mach_timebase_info_data_t timebase;
+        if (mach_timebase_info(&timebase) == KERN_SUCCESS && timebase.denom != 0) {
+            __uint128_t nanos = ((__uint128_t)task.pti_total_user + task.pti_total_system) * timebase.numer / timebase.denom;
+            info->cpu_nanoseconds = nanos > UINT64_MAX ? UINT64_MAX : (uint64_t)nanos;
+            info->has_cpu = 1;
+        }
+        if (!info->has_resident) {
             info->resident_bytes = task.pti_resident_size;
             info->has_resident = 1;
         }

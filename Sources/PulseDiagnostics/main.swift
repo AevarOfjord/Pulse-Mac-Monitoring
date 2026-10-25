@@ -43,9 +43,12 @@ import Darwin
             var iterations: UInt64 = 0
             while ProcessInfo.processInfo.systemUptime < deadline { iterations &+= 1 }
             var native = PulseProcessInfo(); var usage = rusage()
-            guard pulse_read_process(getpid(), &native) != 0, getrusage(RUSAGE_SELF, &usage) == 0 else { fatalError("Self resource access failed") }
+            guard pulse_read_process(getpid(), &native) != 0, native.has_cpu != 0, getrusage(RUSAGE_SELF, &usage) == 0 else { fatalError("Self resource access failed") }
             let seconds = Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
-            guard abs(Double(native.cpu_nanoseconds) / 1_000_000_000 - seconds) < max(0.005, seconds * 0.15) else { fatalError("Process CPU clock units mismatch") }
+            let nativeSeconds = Double(native.cpu_nanoseconds) / 1_000_000_000
+            guard abs(nativeSeconds - seconds) < max(0.005, seconds * 0.15) else {
+                fatalError("Process CPU clock units mismatch: task=\(nativeSeconds)s, getrusage=\(seconds)s")
+            }
             guard snapshot.cpu.map({ $0.isFinite && (0...100).contains($0) }) == true,
                   snapshot.memory?.total ?? 0 > 0,
                   let own = processes.first(where: { $0.pid == Int(ProcessInfo.processInfo.processIdentifier) }),

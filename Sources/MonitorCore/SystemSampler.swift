@@ -225,8 +225,9 @@ public actor SystemSampler {
             let id = "\(pid):\(info.started_microseconds)"
             let current = ProcessCPUCounters(birthID: info.started_microseconds, nanoseconds: info.cpu_nanoseconds,
                                              uptime: ProcessInfo.processInfo.systemUptime)
-            let cpu = info.has_usage != 0 ? current.percent(since: previousProcesses[id]) : nil
-            if info.has_usage != 0 { counters[id] = current } else { unavailable += 1 }
+            let cpu = info.has_cpu != 0 ? current.percent(since: previousProcesses[id]) : nil
+            if info.has_cpu != 0 { counters[id] = current }
+            if info.has_usage == 0 { unavailable += 1 }
             let job: WorkloadMetadata?
             if let cached = metadata[id], cached.0 == path { job = cached.1 }
             else if ["dotnet", "node", "npm", "swift", "xcodebuild", "cargo"].contains(name.lowercased()) {

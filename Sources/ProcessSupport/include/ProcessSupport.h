@@ -13,6 +13,7 @@ typedef struct {
     uint64_t compressed_bytes;
     uint64_t peak_footprint_bytes;
     int has_usage;
+    int has_cpu;
     int has_resident;
     int has_compressed;
     char name[64];
