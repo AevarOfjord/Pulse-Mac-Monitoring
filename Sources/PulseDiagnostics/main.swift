@@ -37,17 +37,24 @@ import Darwin
         let processes = batch.processes
         print("\nProcesses: \(processes.count)")
         if CommandLine.arguments.contains("--smoke") {
-            // Compare the native clock conversion with getrusage, independently
-            // of the process CPU percentage math. Intel's 1:1 timebase hides bugs.
-            let deadline = ProcessInfo.processInfo.systemUptime + 0.1
+            // Compare interval deltas: cumulative lifetime baselines can differ
+            // between the task and BSD APIs after process launch/exec.
+            var beforeNative = PulseProcessInfo(); var beforeUsage = rusage()
+            guard pulse_read_process(getpid(), &beforeNative) != 0, beforeNative.has_cpu != 0,
+                  getrusage(RUSAGE_SELF, &beforeUsage) == 0 else { fatalError("Self resource access failed") }
+            func cpuSeconds(_ usage: rusage) -> Double {
+                Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+            }
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.3
             var iterations: UInt64 = 0
             while ProcessInfo.processInfo.systemUptime < deadline { iterations &+= 1 }
             var native = PulseProcessInfo(); var usage = rusage()
             guard pulse_read_process(getpid(), &native) != 0, native.has_cpu != 0, getrusage(RUSAGE_SELF, &usage) == 0 else { fatalError("Self resource access failed") }
-            let seconds = Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
-            let nativeSeconds = Double(native.cpu_nanoseconds) / 1_000_000_000
+            guard native.cpu_nanoseconds >= beforeNative.cpu_nanoseconds else { fatalError("Process CPU counter decreased") }
+            let seconds = cpuSeconds(usage) - cpuSeconds(beforeUsage)
+            let nativeSeconds = Double(native.cpu_nanoseconds - beforeNative.cpu_nanoseconds) / 1_000_000_000
             guard abs(nativeSeconds - seconds) < max(0.005, seconds * 0.15) else {
-                fatalError("Process CPU clock units mismatch: task=\(nativeSeconds)s, getrusage=\(seconds)s")
+                fatalError("Process CPU clock delta mismatch: task=\(nativeSeconds)s, getrusage=\(seconds)s; totals task=\(native.cpu_nanoseconds)ns, BSD=\(cpuSeconds(usage))s")
             }
             guard snapshot.cpu.map({ $0.isFinite && (0...100).contains($0) }) == true,
                   snapshot.memory?.total ?? 0 > 0,
