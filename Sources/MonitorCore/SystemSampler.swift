@@ -1,20 +1,27 @@
 import Foundation
 import Darwin
 import IOKit
+import ProcessSupport
 
-/// All sampling and subprocess work is isolated from the UI thread.
+/// Native sampling is isolated from the UI thread. No subprocesses or root access.
 public actor SystemSampler {
     private var previousCPU: [CPUTicks] = []
     private var previousNetwork: [String: CounterPair] = [:]
     private var previousDisk: [UInt64: CounterPair] = [:]
     private var previousTime: Double?
+    private var previousSwap: CounterPair?
+    private var previousProcesses: [String: ProcessCPUCounters] = [:]
+    private var metadata: [String: (String, WorkloadMetadata?)] = [:]
     private let host = mach_host_self()
+    private let temperatureReader = TemperatureReader()
 
     public init() {}
     deinit { mach_port_deallocate(mach_task_self_, host) }
 
     public func resetBaselines() {
         previousCPU = []; previousNetwork = [:]; previousDisk = [:]; previousTime = nil
+        previousSwap = nil; previousProcesses = [:]
+        temperatureReader.reset()
     }
 
     public func sample() -> SystemSnapshot {
@@ -33,7 +40,7 @@ public actor SystemSampler {
             }
             previousCPU = ticks
         } else { snapshot.errors.append("CPU sampling is unavailable."); previousCPU = [] }
-        snapshot.memory = memoryMetrics()
+        snapshot.memory = memoryMetrics(elapsed: elapsed)
         if snapshot.memory == nil { snapshot.errors.append("Memory statistics are unavailable.") }
         snapshot.gpu = gpuMetrics()
         snapshot.disk = diskMetrics(elapsed: elapsed)
@@ -53,9 +60,13 @@ public actor SystemSampler {
         case .critical: snapshot.thermal = "Critical"
         @unknown default: snapshot.thermal = "Unknown"
         }
+        // Keep slower HID reads after the counters whose rates use `now`.
+        snapshot.temperatures = temperatureReader.sample(uptime: now).summary
         previousTime = now
         return snapshot
     }
+
+    public func temperatureReport() -> TemperatureReport { temperatureReader.report }
 
     private func cpuTicks() -> [CPUTicks]? {
         var count: natural_t = 0
@@ -73,7 +84,7 @@ public actor SystemSampler {
         }
     }
 
-    private func memoryMetrics() -> MemoryMetrics? {
+    private func memoryMetrics(elapsed: Double) -> MemoryMetrics? {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &stats) {
@@ -91,6 +102,9 @@ public actor SystemSampler {
         memory.wired = UInt64(stats.wire_count) * page
         memory.compressed = UInt64(stats.compressor_page_count) * page
         memory.cached = UInt64(stats.external_page_count) * page + UInt64(stats.purgeable_count) * page
+        let swapCounters = CounterPair(stats.swapins * page, stats.swapouts * page)
+        memory.swapActivity = swapCounters.rate(since: previousSwap, elapsed: elapsed)
+        previousSwap = swapCounters
         var swap = xsw_usage()
         var size = MemoryLayout<xsw_usage>.size
         if sysctlbyname("vm.swapusage", &swap, &size, nil, 0) == 0 { memory.swapUsed = swap.xsu_used }
@@ -194,19 +208,43 @@ public actor SystemSampler {
         return result
     }
 
-    public func processes() -> [ProcessMetric] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-A", "-o", "pid=,pcpu=,rss=,comm="]
-        process.environment = ["LC_ALL": "C", "PATH": "/usr/bin:/bin"]
-        let output = Pipe()
-        let errors = Pipe()
-        process.standardOutput = output; process.standardError = errors
-        do { try process.run() } catch { return [] }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0, let text = String(data: data, encoding: .utf8) else { return [] }
-        return text.split(separator: "\n").compactMap(ProcessMetric.parse).sorted { $0.cpu > $1.cpu }
+    public func processes() -> ProcessBatch {
+        let start = ProcessInfo.processInfo.systemUptime
+        let capacity = min(65_536, max(1024, Int(pulse_list_pids(nil, 0)) + 512))
+        var pids = [Int32](repeating: 0, count: capacity)
+        let count = pids.withUnsafeMutableBufferPointer { pulse_list_pids($0.baseAddress, Int32(capacity)) }
+        var result: [ProcessMetric] = []
+        var counters: [String: ProcessCPUCounters] = [:]
+        var retainedMetadata: [String: (String, WorkloadMetadata?)] = [:]
+        var unavailable = 0
+        for pid in pids.prefix(max(0, min(Int(count), capacity))) where pid > 0 {
+            var info = PulseProcessInfo()
+            guard pulse_read_process(pid, &info) != 0 else { continue }
+            let name = withUnsafeBytes(of: info.name) { String(decoding: $0.prefix(while: { $0 != 0 }), as: UTF8.self) }
+            let path = withUnsafeBytes(of: info.path) { String(decoding: $0.prefix(while: { $0 != 0 }), as: UTF8.self) }
+            let id = "\(pid):\(info.started_microseconds)"
+            let current = ProcessCPUCounters(birthID: info.started_microseconds, nanoseconds: info.cpu_nanoseconds,
+                                             uptime: ProcessInfo.processInfo.systemUptime)
+            let cpu = info.has_usage != 0 ? current.percent(since: previousProcesses[id]) : nil
+            if info.has_usage != 0 { counters[id] = current } else { unavailable += 1 }
+            let job: WorkloadMetadata?
+            if let cached = metadata[id], cached.0 == path { job = cached.1 }
+            else if ["dotnet", "node", "npm", "swift", "xcodebuild", "cargo"].contains(name.lowercased()) {
+                var buffer = [CChar](repeating: 0, count: 65_536)
+                let size = buffer.withUnsafeMutableBufferPointer { pulse_read_arguments(pid, $0.baseAddress, Int32($0.count)) }
+                job = size > 0 ? WorkloadMetadata.inspect(arguments: WorkloadMetadata.decodeArguments(Data(bytes: buffer, count: Int(size)))) : nil
+            } else { job = nil }
+            retainedMetadata[id] = (path, job)
+            result.append(ProcessMetric(pid: Int(pid), parentPID: Int(info.parent_pid), birthID: info.started_microseconds,
+                name: name.isEmpty ? "Process \(pid)" : name, path: path, cpu: cpu,
+                residentMemory: info.has_resident != 0 ? info.resident_bytes : nil,
+                footprint: info.has_usage != 0 ? info.footprint_bytes : nil,
+                compressedMemory: info.has_compressed != 0 ? info.compressed_bytes : nil,
+                peakFootprint: info.has_usage != 0 ? info.peak_footprint_bytes : nil, workload: job))
+        }
+        metadata = retainedMetadata; previousProcesses = counters
+        return ProcessBatch(processes: result.sorted { $0.memory > $1.memory }, unavailableCount: unavailable,
+                            durationMilliseconds: (ProcessInfo.processInfo.systemUptime - start) * 1000)
     }
 
     public static func hardwareName() -> String {

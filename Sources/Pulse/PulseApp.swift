@@ -23,11 +23,12 @@ import MonitorCore
                 }
             }
         }
+        Settings { SettingsView().environmentObject(monitor).preferredColorScheme(.dark) }
         MenuBarExtra {
             MenuBarView().environmentObject(monitor)
         } label: {
             Image(systemName: "waveform.path.ecg")
-            Text("\(Format.percent(monitor.snapshot.cpu))%")
+            Text(monitor.menuText)
                 .monospacedDigit()
         }
         .menuBarExtraStyle(.window)
@@ -47,6 +48,7 @@ struct MenuBarView: View {
             Button("Open Dashboard") { openWindow(id: "dashboard"); NSApp.activate(ignoringOtherApps: true) }
             Button(monitor.isPaused ? "Resume Sampling" : "Pause Sampling", action: monitor.togglePause)
             Button("Quit Pulse") { NSApp.terminate(nil) }
+            SettingsLink { Text("Settings…") }
         }.padding(20).frame(width: 290).preferredColorScheme(.dark)
     }
     private func menuRow(_ title: String, value: String, color: Color) -> some View {

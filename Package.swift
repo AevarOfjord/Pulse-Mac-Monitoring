@@ -7,9 +7,10 @@ let package = Package(
     products: [.executable(name: "Pulse", targets: ["Pulse"]),
                .executable(name: "PulseDiagnostics", targets: ["PulseDiagnostics"])],
     targets: [
-        .target(name: "MonitorCore", linkerSettings: [.linkedFramework("IOKit")]),
+        .target(name: "ProcessSupport"),
+        .target(name: "MonitorCore", dependencies: ["ProcessSupport"], linkerSettings: [.linkedFramework("IOKit")]),
         .executableTarget(name: "Pulse", dependencies: ["MonitorCore"]),
-        .executableTarget(name: "PulseDiagnostics", dependencies: ["MonitorCore"]),
+        .executableTarget(name: "PulseDiagnostics", dependencies: ["MonitorCore", "ProcessSupport"]),
         .testTarget(name: "MonitorCoreTests", dependencies: ["MonitorCore"])
     ],
     swiftLanguageModes: [.v5]

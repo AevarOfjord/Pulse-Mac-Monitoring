@@ -1,32 +1,47 @@
-PULSE FOR MAC — EARLY PREVIEW
+PULSE FOR MAC 2.0 — PREVIEW
 
 Compatibility
 Apple silicon Macs (M1 or newer), including MacBook Air and MacBook Pro.
-Requires macOS 14 Sonoma or later. Intel Macs are not supported.
-Verified on an M5 Pro Mac running macOS 27.0.1; other models and macOS
-versions have not yet been tested. GPU readings depend on the driver and OS.
+Targets macOS 14 Sonoma or later. Intel Macs are outside scope.
+Verified locally on M5 Pro / macOS 27.0.1. Other physical Macs need testing.
+GPU readings depend on driver and OS.
 
 Install
 Extract the ZIP, drag Pulse.app into Applications, then open it.
-Xcode, Command Line Tools, and an administrator helper are not required.
+Developer tools, an account, and a privileged helper are not required.
 
 Distribution status
-This preview is locally signed. It does not have an Apple Developer ID
-signature or Apple notarization. macOS may block downloaded copies.
-A signed and notarized release is needed for standard public installation.
-https://developer.apple.com/macos/distribution/
+The archive name ending in -Preview contains a locally signed app without
+Apple Developer ID signing or notarization. macOS may block the download.
+If you trust it, follow Apple's per-app Open Anyway instructions:
+https://support.apple.com/102445
+Archives without -Preview are created only after Developer ID, notarization,
+and Gatekeeper checks pass. Do not disable Gatekeeper globally.
 
 Use
-The sidebar opens CPU, GPU, memory, storage, network, and process details.
-Choose a 1-, 2-, or 5-second refresh interval, or pause sampling.
-Closing the dashboard leaves Pulse running in the menu bar.
-Choose Quit Pulse from the menu bar or press Command-Q to exit.
-Command-Shift-P pauses or resumes. Command-Shift-E exports history as JSON.
+Use the sidebar for CPU, GPU, memory, storage, network, processes, and history.
+Overview explains elevated resource signals. Processes can be grouped by
+app or recognized development job; expand to see footprint, RSS and details.
+Settings controls the menu metric, adaptive sampling, optional launch at
+login, notifications and history retention. Opt-in features start off.
+Closing the dashboard leaves the menu bar monitor running.
+Command-Q quits. Command-Shift-P pauses. Command-Shift-E exports system metrics.
 
-Notes
-Metrics and up to five minutes of history stay on your Mac.
-History clears when Pulse quits. There is no account, tracking, or upload.
-The process table shows resident memory (RSS); compressed/swapped memory
-can make an app's broader memory footprint substantially larger.
-Thermal state is an OS severity level, not a temperature measurement.
-Temperature, fan speed, power draw, and battery health are not included.
+Privacy and measurement notes
+Pulse makes no network requests. History stays on your Mac.
+Session history lasts up to 24 hours. Recent 15 minutes retain full resolution;
+older data uses 30-second buckets. Charts subsample and can omit brief peaks.
+Optional disk history includes app/workload names and project basenames;
+turn retention off to delete it, or Clear all history to clear everything.
+JSON exports contain system metrics only, without process names or paths.
+Full command arguments and environment values are not retained.
+Physical footprint differs from resident RAM and includes compressed backing.
+Other processes' compressed-byte counters may be restricted by macOS.
+Group totals are approximate and do not equal system RAM used.
+Temperatures shows available PMU die, battery, and storage sensors in Celsius.
+PMU die zones are not verified CPU/GPU core temperatures. Readings refresh
+about every five seconds. Sensor availability varies by hardware and macOS;
+private thermal interfaces may become unavailable after OS updates. Invalid
+readings are omitted. History/exports store group maxima and their read time.
+Thermal state is macOS's separate severity assessment. Fans, power draw,
+and battery health are not collected.

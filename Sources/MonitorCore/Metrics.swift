@@ -46,6 +46,7 @@ public struct MemoryMetrics: Sendable, Codable {
     public var compressed: UInt64 = 0
     public var cached: UInt64 = 0
     public var swapUsed: UInt64?
+    public var swapActivity: CounterRate?
     public var pressure: String = "Unavailable"
     public var used: UInt64 { min(total, app + wired + compressed) }
     public var available: UInt64 { total > used ? total - used : 0 }
@@ -81,19 +82,57 @@ public struct NetworkInterface: Sendable, Codable, Identifiable {
 }
 
 public struct ProcessMetric: Sendable, Identifiable, Codable {
-    public var id: Int { pid }
+    public var id: String { "\(pid):\(birthID)" }
     public let pid: Int
+    public let parentPID: Int
+    public let birthID: UInt64
     public let name: String
     public let path: String
-    public let cpu: Double
-    public let memory: UInt64
-    public static func parse(_ line: Substring) -> ProcessMetric? {
-        let fields = line.split(maxSplits: 3, omittingEmptySubsequences: true, whereSeparator: { $0.isWhitespace })
-        guard fields.count == 4, let pid = Int(fields[0]), let cpu = Double(fields[1]),
-              let rss = UInt64(fields[2]) else { return nil }
-        let path = String(fields[3])
-        return ProcessMetric(pid: pid, name: URL(fileURLWithPath: path).lastPathComponent,
-                             path: path, cpu: cpu, memory: rss * 1024)
+    public let cpu: Double?
+    public let residentMemory: UInt64?
+    public let footprint: UInt64?
+    public let compressedMemory: UInt64?
+    public let peakFootprint: UInt64?
+    public let workload: WorkloadMetadata?
+    public var startedAt: Date { Date(timeIntervalSince1970: Double(birthID) / 1_000_000) }
+    public var memory: UInt64 { footprint ?? residentMemory ?? 0 }
+    public var appBundle: String? {
+        guard let range = path.range(of: ".app/") else { return nil }
+        return String(path[..<range.lowerBound]) + ".app"
+    }
+    public init(pid: Int, parentPID: Int = 1, birthID: UInt64 = 1, name: String,
+                path: String = "", cpu: Double? = nil, residentMemory: UInt64? = nil,
+                footprint: UInt64? = nil, compressedMemory: UInt64? = nil,
+                peakFootprint: UInt64? = nil, workload: WorkloadMetadata? = nil) {
+        self.pid = pid; self.parentPID = parentPID; self.birthID = birthID
+        self.name = name; self.path = path; self.cpu = cpu; self.residentMemory = residentMemory
+        self.footprint = footprint; self.compressedMemory = compressedMemory
+        self.peakFootprint = peakFootprint; self.workload = workload
+    }
+}
+
+public struct ProcessCPUCounters: Sendable {
+    public let birthID: UInt64
+    public let nanoseconds: UInt64
+    public let uptime: Double
+    public init(birthID: UInt64, nanoseconds: UInt64, uptime: Double) {
+        self.birthID = birthID; self.nanoseconds = nanoseconds; self.uptime = uptime
+    }
+    public func percent(since old: Self?) -> Double? {
+        guard let old, old.birthID == birthID, uptime > old.uptime, nanoseconds >= old.nanoseconds else { return nil }
+        return Double(nanoseconds - old.nanoseconds) / 1_000_000_000 / (uptime - old.uptime) * 100
+    }
+}
+
+public struct ProcessBatch: Sendable {
+    public var processes: [ProcessMetric]
+    public var unavailableCount: Int
+    public var durationMilliseconds: Double
+    public var sampledAt: Date
+    public init(processes: [ProcessMetric] = [], unavailableCount: Int = 0,
+                durationMilliseconds: Double = 0, sampledAt: Date = Date()) {
+        self.processes = processes; self.unavailableCount = unavailableCount
+        self.durationMilliseconds = durationMilliseconds; self.sampledAt = sampledAt
     }
 }
 
@@ -109,6 +148,7 @@ public struct SystemSnapshot: Sendable, Codable {
     public var network: CounterRate?
     public var interfaces: [NetworkInterface] = []
     public var thermal = "Unavailable"
+    public var temperatures: TemperatureSummary?
     public var uptime: Double = 0
     public var loadAverage: [Double] = []
     public var errors: [String] = []
@@ -116,6 +156,10 @@ public struct SystemSnapshot: Sendable, Codable {
 }
 
 public enum Format {
+    public static func temperature(_ value: Double?) -> String {
+        guard let value, value.isFinite else { return "—" }
+        return String(format: "%.1f °C", value)
+    }
     public static func bytes(_ value: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .binary)
     }

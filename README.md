@@ -1,94 +1,77 @@
-# Pulse for Mac
+# Pulse for Mac · 2.0 preview
 
-A native, local-only macOS performance monitor for **Apple silicon Macs (M1 and newer) running macOS 14 Sonoma or later**, built with SwiftUI. No account, server, dependencies, administrator password, or background helper.
+A native, local-only performance monitor for **Apple silicon Macs (M1 and newer), targeting macOS 14 Sonoma or later**. Built with SwiftUI and native macOS counters. No account, server, third-party dependencies, administrator password, or privileged helper.
 
-## Install the preview
+## Install
 
-1. Open the [GitHub preview release](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/releases/tag/v1.0.0-preview.1).
-2. Download **Pulse-1.0-AppleSilicon-Preview.zip** from Assets. GitHub's **Source code** archives contain the project rather than a ready-to-run app.
-3. Extract the ZIP, drag **Pulse.app** into Applications, then open it.
+Download the [Pulse 2.0 preview ZIP](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/releases/download/v2.0.0-preview.1/Pulse-2.0-AppleSilicon-Preview.zip), or visit [Releases](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/releases/tag/v2.0.0-preview.1) for the checksum and notes. GitHub's “Source code” archives contain the project, not an app. Extract the ZIP, drag **Pulse.app** into Applications, and open it.
 
-The preview is locally signed and has not been notarized by Apple. If macOS blocks the first launch and you trust this download, open **System Settings → Privacy & Security → Open Anyway** for Pulse and confirm. See [Apple's instructions](https://support.apple.com/102445). Signing and notarization are still planned for a standard public installation experience.
+Preview builds are locally signed and **not notarized**. If macOS blocks a download you trust, use **System Settings → Privacy & Security → Open Anyway**, following [Apple's instructions](https://support.apple.com/102445). Never disable Gatekeeper globally. Building from source is also available.
 
-Monitoring starts automatically. Closing the dashboard leaves the menu bar monitor running; choose **Quit Pulse** from the menu bar or press **Command-Q** to exit.
+Verified locally on an **M5 Pro running macOS 27.0.1**. The CI workflow targets Apple silicon runners on macOS 15 and 26. A configured matrix is not evidence of a successful run; see [Actions](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/actions) for results. macOS 14 remains the deployment target, but its [GitHub runner retires November 2, 2026](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/). Other physical M-series Macs still need testing. Intel Macs are outside scope.
 
-## Build from source
+## What’s new in 2.0
 
-```sh
-git clone https://github.com/AevarOfjord/Pulse-Mac-Monitoring.git
-cd Pulse-Mac-Monitoring
-./scripts/build-app.sh --open
-```
+1. **Better process accounting.** Physical footprint, RSS, peak footprint, parent PID, start time, and CPU deltas between scans. Identity includes PID and process start time to handle PID reuse. Per-process compressed bytes appear for Pulse itself; other tasks show unavailable when macOS restricts access.
+2. **Apps and development workloads.** Group app helpers and descendants of recognized build/test/run commands. See project basenames when passed explicitly, running duration, group totals, and concurrent similar jobs. Expand any group to inspect its processes or switch to the flat list.
+3. **Resource explanations.** Overview explains elevated macOS memory pressure, active swap I/O, busy CPU/GPU, serious thermal state, and low disk space. Ranked footprints and CPU consumers provide context, not proof of causation. High RAM usage or old swap usage alone does not trigger a warning.
+4. **History and sustained alerts.** Up to 24 hours of session history with the five largest group footprints at each process scan. Optional local retention across restarts. Opt-in alerts require 30, 60, or 120 seconds of consecutive elevated observations, with a 15-minute cooldown per resource. Events remain visible in History even if notification permission is denied.
+5. **Less monitoring overhead.** Native process APIs replace periodic `ps` subprocesses. Metadata is cached by process identity. When the dashboard is hidden, closed, or minimized, adaptive sampling uses at least 5 seconds for system metrics and 15 seconds for processes, and removes the chart views. Chart work is bounded to 240 observations.
+6. **Saved preferences and release tooling.** Configurable menu bar metric, optional launch at login, saved sampling and process-view choices, Apple silicon CI, privacy checks in packaging, and Developer ID/notarization scripts for a future signed release.
 
-Running the packaged app requires no developer tools. Building from source requires Apple Command Line Tools with Swift 6 or later. The build script explicitly produces an Apple silicon (`arm64`) app and signs it locally. Intel Macs are outside the supported scope.
+CPU, GPU, logical cores, memory breakdown, disk capacity and activity, Ethernet/Wi-Fi traffic, thermal state, pause/resume, and JSON export remain available. **Temperatures** adds live PMU die, battery, and storage group maxima, sensor labels, and selectable °C history. Overview includes the three temperature readings. Use **Settings…** from the sidebar, menu bar, or **⌘,**. Closing the dashboard keeps the menu bar monitor running. Quit with **⌘Q**. **⌘⇧P** pauses/resumes; **⌘⇧E** exports retained system metrics.
 
-Verified on an M5 Pro Mac running macOS 27.0.1. Other Apple silicon models and older supported macOS versions still need device testing. The deployment target of macOS 14 is an intended compatibility baseline, not confirmation that every supported version has been tested.
+Click or drag across a chart to inspect a reading. The selection remains after release, with its timestamp and values in the panel header, leaving the graph unobstructed. CPU selections show Total, User, and System; network selections show Download and Upload; disk selections show Read and Write. The overview's large CPU number identifies live or paused data separately. History's time slider selects the same sample in the chart header and contributor details. Inspection uses retained samples even when the plotted line is subsampled.
 
-## Sharing a preview
+After enabling alerts, use **Send test notification** to check the notification request. macOS controls banner delivery and Focus settings. **Refresh status** rechecks permission after a change in System Settings; denied permission still permits events in History.
 
-Package the existing build:
+## History and privacy
 
-```sh
-./scripts/package-release.sh
-```
+Pulse makes no network requests. All measurements stay on your Mac unless you choose to export or share them.
 
-This creates `build/Pulse-1.0-AppleSilicon-Preview.zip` and a SHA-256 checksum. The ZIP contains Pulse.app and installation notes. Source files and exported performance history are excluded.
-
-Packaging removes debug symbol records with absolute developer build paths and excludes Finder metadata and extended attributes. The sanitized preview copy is signed again and verified. `.gitignore` excludes `build/`, `.build/`, and `.swiftpm/`; use Git to publish the source rather than uploading the entire working directory, which also contains local diagnostics and compiler caches.
-
-The current preview is locally signed, without an Apple Developer ID signature or notarization. Downloaded copies may be blocked by Gatekeeper. For normal public installation, prepare a Developer ID-signed, notarized release using [Apple's distribution workflow](https://developer.apple.com/macos/distribution/).
-
-Suggested compatibility wording for a demo: **“Pulse is a native performance monitor targeting Apple silicon Macs (M1 or newer) on macOS 14+. Early preview, currently verified on M5 Pro.”**
-
-## Features
-
-- CPU utilization, user/system activity, individual logical cores, and load averages.
-- GPU device, renderer and tiler utilization, GPU cores, and allocated memory where the driver exposes them.
-- Memory usage split into app, wired, and compressed memory; cached files, swap, and memory pressure.
-- Startup disk capacity and aggregate disk read/write rates.
-- Download/upload speeds and cumulative counters per Ethernet/Wi-Fi interface.
-- Searchable process list with CPU, resident memory, PID, sorting, and executable paths.
-- Thermal state, system uptime, and a compact menu bar summary.
-- 1-, 2-, or 5-second sampling, pause/resume, up to five minutes of history, and JSON export.
-
-Use the sidebar for details. Drag across a chart to inspect values. Process CPU can exceed 100% when using multiple cores. The process list refreshes every five seconds or the sampling interval, whichever is longer.
-
-Shortcuts: **⌘⇧P** pauses/resumes; **⌘⇧E** exports history; **⌘Q** quits. Export saves measured system snapshots from the in-memory history, without process paths or names. Nothing is uploaded. History is cleared when the app quits.
+- Disk retention and alerts are **off by default**. Session history is bounded to 24 hours. Recent 15-minute history retains the configured sampling resolution; older data keeps the last observation in each 30-second bucket. Charts subsample to 240 points, so brief peaks can be omitted.
+- Pauses, sleep, restarts, and unavailable readings break chart lines. Alert observation duration resets across pauses and sleep. Process contributors are sampled less frequently than system metrics; History shows their scan timestamp.
+- Enabling local retention writes `~/Library/Application Support/Pulse/history-v2.json`, at most once a minute, with user-only file permissions and an 8 MiB limit. Quitting can lose the last minute. The file contains system metrics and **app/workload names, including project basenames**. Disable retention to delete this file, or use **Clear all history** to clear saved and session history.
+- Process executable paths are displayed in the live process details. Argument inspection retains only an allowed command category and an explicit project basename. Full arguments and environment values are discarded and never included in history.
+- **JSON export contains system snapshots only**, without app names, project names, executable paths, or arguments. Notification bodies also omit app/project names. Pressure events are session-only.
+- `.gitignore` excludes local builds, diagnostics, and exported JSON in `build/`. Do not commit exports elsewhere or upload the entire working folder.
 
 ## Measurements and limits
 
 | Reading | Source and behavior |
 | --- | --- |
-| CPU | Deltas of Mach `host_processor_info` ticks. Whole-machine CPU is 0–100%; per-core values use the same scale. The first sample establishes a baseline. |
-| Memory | Mach `host_statistics64` VM counters. Used = resident anonymous app pages (excluding purgeable pages) + wired + compressed. Available = physical − used; includes reclaimable cache. Swap and pressure use `sysctl` where permitted. |
-| GPU | IOKit `IOAccelerator` driver performance statistics. On multi-GPU Macs the busiest available GPU is shown. These driver-defined keys vary by hardware and OS. Missing metrics say “Unavailable” or show a dash. |
-| Disk | APFS Data volume capacity; `IOBlockStorageDriver` byte deltas across exposed block storage drivers. Free capacity excludes purgeable files and may differ from Finder. |
-| Network | 64-bit `NET_RT_IFLIST2` interface counters for active `en*` Ethernet/Wi-Fi interfaces. VPN, loopback, and peer-to-peer traffic are excluded to avoid double counting. This measures current traffic, not maximum connection speed. |
-| Processes | `/bin/ps` CPU accounting and RSS, not instantaneous CPU deltas. Shared resident pages can appear in multiple processes. |
-| Thermal | `ProcessInfo.thermalState`, an OS severity level, not a temperature. |
+| CPU | Mach `host_processor_info` tick deltas. Whole-machine and per-core utilization are 0–100%. First sample establishes a baseline. |
+| Process CPU | `proc_pid_rusage` cumulative CPU ticks, converted with `mach_timebase_info` before interval deltas. A process can exceed 100% across cores. The smoke check compares units against `getrusage`. |
+| Process memory | `proc_pid_rusage` physical footprint, resident size, and peak footprint; resident-only fallback via `PROC_PIDTASKINFO`. Footprint is memory charged to a process, including compressed backing, not resident RAM. Group sums are approximate, can overlap shared allocations, and do not equal system RAM used. Missing members mark group footprint as partial. |
+| Grouping | App bundle ancestry and parent PID chains, checked against start times with cycle guards. Recognizes `dotnet`, `node`, `npm`, `swift`, `xcodebuild`, and `cargo` with a direct `test/build/run/watch/publish/restore` subcommand. Project names are extracted from explicit `.csproj/.sln/.slnx/.xcodeproj/.xcworkspace` arguments. Reparented processes, implicit projects, and other command forms may remain separate. |
+| System memory | Mach VM counters. Used = resident anonymous app pages (minus purgeable) + wired + compressed. Available = physical − used, including reclaimable cache. Swap usage and OS pressure use `sysctl` where permitted; swap I/O uses VM counter deltas. |
+| GPU | IOKit `IOAccelerator` driver statistics; busiest exposed accelerator. Availability varies by hardware and OS. Per-app GPU attribution is unavailable. |
+| Disk | APFS Data volume capacity and aggregate `IOBlockStorageDriver` read/write deltas. Free space excludes purgeable files and can differ from Finder. |
+| Network | 64-bit `NET_RT_IFLIST2` counters on active `en*` Ethernet/Wi-Fi interfaces. VPN, loopback, and peer-to-peer traffic excluded to avoid duplicate counting. Measures traffic, not connection capacity. |
+| Thermal | `ProcessInfo.thermalState`, an OS severity level, not temperature. |
+| Temperature | Read-only Apple-vendor HID thermal events, resolved at runtime. Reads are cached for at least five seconds (six at a two-second system interval); service discovery is cached for a minute and reset after wake/restart. PMU die = highest valid `PMU tdie*` zone; battery/NAND labels determine the other two maxima. These zones are **not verified CPU/GPU core temperatures**. The sensor page retains original labels and distinguishes repeated names. Missing/nonfinite values and values outside −20…150 °C are omitted as implausible, not treated as thermal alerts. Unsupported hardware or macOS versions show unavailable. No administrator permission is needed. |
 
-Rates use actual elapsed monotonic time. New or reset counters need two samples; pausing/resuming resets the baselines. There are no synthetic readings or prefilled charts. GPU statistics depend on which counters the Apple silicon GPU driver exposes on the installed macOS version; missing readings show as unavailable. Temperature, fans, frequency, power draw, and battery health are not implemented.
+Explanation thresholds: CPU ≥85%, GPU ≥90%, memory pressure warning/critical or ≥20 MiB/s combined swap I/O, thermal serious/critical, and disk free <10%. These indicate resource signals, not a definitive diagnosis of application latency. No artificial health score is calculated.
 
-Apple references: [Mach processor information](https://developer.apple.com/documentation/kernel/1502854-host_processor_info), [IOKit service matching](https://developer.apple.com/documentation/iokit/1514494-ioservicegetmatchingservices).
+Rates use actual monotonic elapsed time. New/reset counters need two samples. Restricted counters show a dash or “Unavailable”; they are not replaced with fabricated values. System and process scans are sequential observations rather than an atomic snapshot. Temperature history/exports contain the three optional group maxima and their sensor-read timestamp, not the full list or registry identifiers. Old history remains readable with temperatures absent. Temperature access uses private macOS interfaces and may change across releases. Fan speeds, frequency, power draw, and battery health are not implemented.
 
-## Development and verification
+Primary references: [Apple XNU process accounting](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/bsd_kern.c), [Mach timebase](https://developer.apple.com/documentation/kernel/1462446-mach_timebase_info), [login items](https://developer.apple.com/documentation/servicemanagement/smappservice), [notification permissions](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications).
 
-```sh
-swift build
-./scripts/test.sh
-swift run PulseDiagnostics
-```
+## Build and test
 
-The diagnostic tool takes two real samples one second apart, prints JSON, and lists the busiest processes. Restricted terminals can block process enumeration and some `sysctl` readings; the app runs without an App Sandbox entitlement. CPU and rate calculations, tick wraparound, 64-bit counters, reset handling, memory accounting, and process-path parsing have nine Swift Testing tests. The test script explicitly loads the bundled Testing macro plugin for Command Line Tools versions that omit it from build commands.
-
-For a restricted build environment, keep compiler caches within the project:
+Requires Apple Command Line Tools or Xcode with **Swift 6+**; running a packaged app needs neither.
 
 ```sh
-export CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache"
-export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/ModuleCache"
+git clone https://github.com/AevarOfjord/Pulse-Mac-Monitoring.git
+cd Pulse-Mac-Monitoring
 ./scripts/test.sh
+swift run --disable-sandbox PulseDiagnostics --smoke
+./scripts/build-app.sh --open
+./scripts/package-release.sh
 ```
 
-`--disable-sandbox` applies only to SwiftPM’s build subprocesses. The build script uses it for compatibility with restricted development environments. The app needs no privileged operations.
+The preview archive is `build/Pulse-2.0-AppleSilicon-Preview.zip`, with a SHA-256 checksum alongside it. Packaging includes only the app and installation notes, excludes Finder metadata, strips debug source paths, checks for absolute developer paths, and verifies the local signature and architecture. Quit a running local build before rebuilding it.
 
-Source layout: `Sources/MonitorCore` contains the isolated sampler and calculations; `Sources/Pulse` contains the native dashboard; `Sources/PulseDiagnostics` is the live CLI check.
+`PulseDiagnostics` without `--smoke` prints real system metrics and the largest processes. Treat that output as private diagnostic data. Restricted terminals may block process enumeration or some sysctl readings; run the diagnostic in a normal local terminal. The app has no App Sandbox entitlement and needs no root access. SwiftPM's `--disable-sandbox` affects build subprocesses, not app privileges.
+
+See [TESTING.md](TESTING.md) for coverage and manual checks, and [RELEASING.md](RELEASING.md) for optional Developer ID signing and notarization. The current maintainer has no Apple Developer Program membership, so 2.0 remains a locally signed preview.

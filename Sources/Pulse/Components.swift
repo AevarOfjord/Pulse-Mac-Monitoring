@@ -30,14 +30,18 @@ struct Panel<Content: View>: View {
     var subtitle: String? = nil
     var symbol: String? = nil
     var color: Color = Palette.mint
+    var inspection: ChartInspection? = nil
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 9) {
-                if let symbol { Image(systemName: symbol).foregroundStyle(color).font(.system(size: 14)) }
-                Text(title).font(.system(size: 14, weight: .semibold))
-                Spacer()
-                if let subtitle { Text(subtitle).font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.muted) }
+            HStack(spacing: 12) {
+                HStack(spacing: 9) {
+                    if let symbol { Image(systemName: symbol).foregroundStyle(color).font(.system(size: 14)) }
+                    Text(title).font(.system(size: 14, weight: .semibold))
+                }.fixedSize()
+                if let inspection { ChartInspectionView(inspection: inspection) }
+                else { Spacer() }
+                if let subtitle { Text(subtitle).font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.muted).fixedSize() }
             }
             content
         }
@@ -91,51 +95,72 @@ struct Sparkline: View {
     }
 }
 
+enum ChartUnit {
+    case percent, rate, celsius
+    func label(_ value: Double) -> String {
+        switch self {
+        case .percent: return "\(Int(value))%"
+        case .rate: return Format.rate(value)
+        case .celsius: return "\(Int(value)) °C"
+        }
+    }
+}
+
 struct TimeChart: View {
     let history: [HistoryPoint]
     let color: Color
     var secondaryColor: Color = Palette.blue
     var maximum: Double? = 100
+    var unit: ChartUnit = .percent
     var seconds: Double = 120
     var value: (SystemSnapshot) -> Double?
     var secondary: ((SystemSnapshot) -> Double?)? = nil
-    @ViewState private var selectedDate: Date?
+    @Binding var selection: Date?
     private var end: Date { history.last?.date ?? Date() }
-    private var points: [HistoryPoint] { history.filter { $0.date >= end.addingTimeInterval(-seconds) } }
+    private var visibleSamples: [HistoryPoint] { history.filter { $0.date >= end.addingTimeInterval(-seconds) } }
+    private var points: [HistoryPoint] { HistoryBuffer.chartSamples(visibleSamples) }
+    private var entries: [(point: HistoryPoint, primary: String, secondary: String)] {
+        var primary = 0; var second = 0
+        return points.map { point in
+            if value(point.snapshot) == nil { primary += 1 }
+            if secondary?(point.snapshot) == nil { second += 1 }
+            return (point, "\(point.segment)-\(primary)", "\(point.segment)-\(second)")
+        }
+    }
     private var ceiling: Double {
-        maximum ?? max(1024, (points.flatMap { [value($0.snapshot) ?? 0, secondary?($0.snapshot) ?? 0] }.max() ?? 1) * 1.2)
+        maximum ?? max(unit == .rate ? 1024 : 1, (points.flatMap { [value($0.snapshot) ?? 0, secondary?($0.snapshot) ?? 0] }.max() ?? 1) * 1.2)
+    }
+    private var floor: Double {
+        unit == .celsius ? min(0, (points.compactMap { value($0.snapshot) }.min() ?? 0) - 5) : 0
     }
     var body: some View {
         Chart {
-            ForEach(points) { point in
+            ForEach(entries, id: \.point.id) { entry in
+                let point = entry.point
                 if let number = value(point.snapshot) {
-                    AreaMark(x: .value("Time", point.date), y: .value("Value", number))
+                    AreaMark(x: .value("Time", point.date), y: .value("Value", number), series: .value("Segment", entry.primary))
                         .foregroundStyle(LinearGradient(colors: [color.opacity(0.19), color.opacity(0.01)], startPoint: .top, endPoint: .bottom))
                         .interpolationMethod(.linear)
-                    LineMark(x: .value("Time", point.date), y: .value("Value", number), series: .value("Metric", "Primary"))
+                    LineMark(x: .value("Time", point.date), y: .value("Value", number), series: .value("Metric", "Primary-\(entry.primary)"))
                         .foregroundStyle(color).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.linear)
                 }
                 if let number = secondary?(point.snapshot) {
-                    LineMark(x: .value("Time", point.date), y: .value("Value", number), series: .value("Metric", "Secondary"))
+                    LineMark(x: .value("Time", point.date), y: .value("Value", number), series: .value("Metric", "Secondary-\(entry.secondary)"))
                         .foregroundStyle(secondaryColor).lineStyle(StrokeStyle(lineWidth: 1.7)).interpolationMethod(.linear)
                 }
             }
-            if let selectedDate, let nearest = points.min(by: { abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate)) }), let number = value(nearest.snapshot) {
+            if let nearest = selectedChartSample(in: history, at: selection, seconds: seconds) {
                 RuleMark(x: .value("Selected", nearest.date)).foregroundStyle(Palette.muted.opacity(0.6))
-                    .annotation(position: .top, alignment: .leading) {
-                        Text(maximum == 100 ? "\(Format.percent(number))%" : Format.rate(number))
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced)).padding(5).background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 4))
-                    }
             }
         }
         .chartXScale(domain: end.addingTimeInterval(-seconds)...end)
-        .chartYScale(domain: 0...ceiling)
+        .chartYScale(domain: floor...ceiling)
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { axis in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.6, dash: [3, 4])).foregroundStyle(Palette.border)
                 AxisValueLabel {
                     if let number = axis.as(Double.self) {
-                        Text(maximum == 100 ? "\(Int(number))%" : Format.rate(number)).font(.system(size: 9)).foregroundStyle(Palette.muted)
+                        Text(unit.label(number)).font(.system(size: 9)).foregroundStyle(Palette.muted)
                     }
                 }
             }
@@ -145,9 +170,16 @@ struct TimeChart: View {
                 AxisValueLabel(format: .dateTime.hour().minute().second()).font(.system(size: 9)).foregroundStyle(Palette.muted)
             }
         }
-        .chartXSelection(value: $selectedDate)
-        .chartPlotStyle { $0.clipped() }
+        .chartXSelection(value: $selection)
+        // macOS defaults to hover selection. Explicitly support clicking and
+        // dragging, retaining the reading after the pointer is released.
+        .chartGesture { proxy in
+            DragGesture(minimumDistance: 0)
+                .onChanged { proxy.selectXValue(at: $0.location.x) }
+        }
+        .chartLegend(.hidden)
         .accessibilityLabel("Live activity chart")
+        .help("Click or drag across the chart to inspect a reading.")
     }
 }
 

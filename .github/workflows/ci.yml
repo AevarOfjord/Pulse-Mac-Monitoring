@@ -1,0 +1,36 @@
+name: Apple silicon checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pulse-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify architecture and toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          swift --version
+      - name: Unit and persistence tests
+        run: ./scripts/test.sh
+      - name: Native sampler smoke check
+        run: swift run --disable-sandbox PulseDiagnostics --smoke
+      - name: Build and verify preview
+        run: |
+          ./scripts/build-app.sh
+          ./scripts/package-release.sh
+          codesign --verify --deep --strict build/Pulse.app
+          test "$(lipo -archs build/Pulse.app/Contents/MacOS/Pulse)" = arm64
+          cd build
+          shasum -a 256 -c Pulse-2.0-AppleSilicon-Preview.zip.sha256

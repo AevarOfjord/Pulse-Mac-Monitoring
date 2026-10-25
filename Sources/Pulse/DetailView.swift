@@ -5,17 +5,28 @@ struct DetailView: View {
     @EnvironmentObject var monitor: MonitorStore
     let section: Section
     @ViewState private var window: Double = 120
+    @ViewState private var selectedDate: Date?
+    private var chartMetric: ChartMetric {
+        switch section {
+        case .gpu: return .gpu
+        case .memory: return .memory
+        case .storage: return .storage
+        case .network: return .network
+        default: return .cpu
+        }
+    }
     private var snapshot: SystemSnapshot { monitor.snapshot }
     var body: some View {
         VStack(spacing: 20) {
-            Panel(title: "\(section.rawValue) history", symbol: section.icon, color: section.color) {
+            Panel(title: "\(section.rawValue) history", symbol: section.icon, color: section.color,
+                  inspection: chartMetric.inspection(in: monitor.history, at: selectedDate, seconds: window)) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(headline).font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                     Spacer()
                     Picker("History", selection: $window) { Text("1 min").tag(60.0); Text("2 min").tag(120.0); Text("5 min").tag(300.0) }.pickerStyle(.segmented).frame(width: 210)
                 }
-                TimeChart(history: monitor.history, color: section.color, maximum: isRate ? nil : 100, seconds: window,
-                          value: primaryValue, secondary: isRate ? secondaryValue : nil).frame(height: 250)
+                TimeChart(history: monitor.history, color: section.color, maximum: isRate ? nil : 100, unit: isRate ? .rate : .percent, seconds: window,
+                          value: primaryValue, secondary: isRate ? secondaryValue : nil, selection: $selectedDate).frame(height: 250)
                 if isRate {
                     HStack(spacing: 20) { DotLabel(text: section == .network ? "Download" : "Read", color: section.color); DotLabel(text: section == .network ? "Upload" : "Write", color: Palette.blue) }
                 }
@@ -74,7 +85,7 @@ struct DetailView: View {
             StatRow(label: "Renderer utilization", value: snapshot.gpu.renderer.map { "\(Format.percent($0))%" } ?? "Unavailable")
             StatRow(label: "Tiler utilization", value: snapshot.gpu.tiler.map { "\(Format.percent($0))%" } ?? "Unavailable")
             StatRow(label: "GPU memory in use", value: snapshot.gpu.memoryUsed.map(Format.bytes) ?? "Unavailable")
-            Text("These readings come from the GPU driver. Availability varies by Mac and macOS version. On Macs with multiple GPUs, Pulse shows the busiest available accelerator. Temperature, fan speed, and power draw require additional hardware access and are not collected.")
+            Text("These readings come from the GPU driver. Availability varies by Mac and macOS version. On Macs with multiple GPUs, Pulse shows the busiest available accelerator. See Temperatures for available thermal zones; these are not mapped to individual CPU or GPU cores.")
                 .font(.system(size: 11)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -89,6 +100,7 @@ struct DetailView: View {
                 StatRow(label: "Cached files (reclaimable)", value: Format.bytes(memory.cached))
                 StatRow(label: "Available (includes reclaimable memory)", value: Format.bytes(memory.available))
                 StatRow(label: "Swap used", value: memory.swapUsed.map(Format.bytes) ?? "Unavailable")
+                StatRow(label: "Swap read / write", value: "\(Format.rate(memory.swapActivity?.incoming)) / \(Format.rate(memory.swapActivity?.outgoing))")
                 StatRow(label: "Memory pressure", value: memory.pressure, color: memory.pressure == "Normal" ? Palette.mint : Palette.amber)
             } else { Text("Memory statistics are unavailable.").foregroundStyle(Palette.muted) }
         }

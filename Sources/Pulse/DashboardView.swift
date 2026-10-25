@@ -3,13 +3,16 @@ import MonitorCore
 
 struct DashboardView: View {
     @EnvironmentObject var monitor: MonitorStore
+    @ViewState private var selectedCPUDate: Date?
+    @ViewState private var selectedGPUDate: Date?
+    @ViewState private var selectedNetworkDate: Date?
     var body: some View {
         HStack(spacing: 0) {
             sidebar
             Rectangle().fill(Palette.border).frame(width: 1)
             VStack(spacing: 0) {
                 header
-                ScrollView {
+                if monitor.dashboardVisible { ScrollView {
                     VStack(spacing: 20) {
                         if !monitor.snapshot.errors.isEmpty {
                             Label(monitor.snapshot.errors.joined(separator: " "), systemImage: "exclamationmark.triangle")
@@ -17,14 +20,19 @@ struct DashboardView: View {
                         }
                         if monitor.selected == .overview { overview }
                         else if monitor.selected == .processes { ProcessesView() }
+                        else if monitor.selected == .history { HistoryView() }
+                        else if monitor.selected == .temperatures { TemperaturesView() }
                         else { DetailView(section: monitor.selected) }
                     }.padding(.horizontal, 28).padding(.bottom, 24)
                 }
+                } else { Spacer() }
                 footer
             }
         }
         .background(Palette.background)
+        .background(DashboardWindowProbe(monitor: monitor).frame(width: 0, height: 0))
         .tint(Palette.mint)
+        .onAppear { DispatchQueue.main.async { monitor.refreshWindowVisibility() } }
         .alert("Couldn’t export metrics", isPresented: Binding(get: { monitor.exportError != nil }, set: { if !$0 { monitor.exportError = nil } })) {
             Button("OK") { monitor.exportError = nil }
         } message: { Text(monitor.exportError ?? "") }
@@ -64,7 +72,8 @@ struct DashboardView: View {
                 }.padding(.top, 4)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Palette.panel, in: RoundedRectangle(cornerRadius: 11)).padding(14)
-            Text("PULSE FOR MAC  /  1.0").font(.system(size: 8, weight: .medium)).tracking(1.1).foregroundStyle(Palette.muted.opacity(0.6)).padding(.horizontal, 24).padding(.bottom, 21)
+            SettingsLink { Label("Settings", systemImage: "gearshape").font(.system(size: 12)) }.buttonStyle(.plain).padding(.horizontal, 24).padding(.bottom, 16)
+            Text("PULSE FOR MAC  /  2.0").font(.system(size: 8, weight: .medium)).tracking(1.1).foregroundStyle(Palette.muted.opacity(0.6)).padding(.horizontal, 24).padding(.bottom, 21)
         }.frame(width: 198).background(Palette.sidebar)
     }
 
@@ -93,12 +102,14 @@ struct DashboardView: View {
                 .help(monitor.isPaused ? "Resume sampling" : "Pause sampling")
             Button(action: monitor.export) {
                 Image(systemName: "square.and.arrow.up").font(.system(size: 13)).frame(width: 28, height: 28)
-            }.buttonStyle(.plain).background(Palette.panel, in: RoundedRectangle(cornerRadius: 7)).help("Export last 5 minutes as JSON").accessibilityLabel("Export metrics")
+            }.buttonStyle(.plain).background(Palette.panel, in: RoundedRectangle(cornerRadius: 7)).help("Export retained system metrics as JSON").accessibilityLabel("Export metrics")
         }.padding(.horizontal, 28).padding(.top, 36).padding(.bottom, 27)
     }
 
     private var overview: some View {
         VStack(spacing: 20) {
+            InsightsPanel()
+            TemperatureOverviewPanel()
             HStack(spacing: 14) {
                 MetricCard(title: "CPU usage", icon: "cpu", value: Format.percent(monitor.snapshot.cpu), caption: "\(monitor.snapshot.cores.count) logical cores", color: Palette.mint, values: monitor.history.compactMap { $0.snapshot.cpu })
                 MetricCard(title: "GPU usage", icon: "display", value: Format.percent(monitor.snapshot.gpu.utilization), caption: monitor.snapshot.gpu.utilization == nil ? "Not exposed by this Mac" : monitor.snapshot.gpu.name, color: Palette.purple, values: monitor.history.compactMap { $0.snapshot.gpu.utilization })
@@ -106,36 +117,38 @@ struct DashboardView: View {
                 MetricCard(title: "Download", icon: "arrow.down", value: networkValue, unit: networkUnit, caption: "↑ \(Format.rate(monitor.snapshot.network?.outgoing)) upload", color: Palette.cyan, values: monitor.history.compactMap { $0.snapshot.network?.incoming })
             }
             HStack(alignment: .top, spacing: 18) {
-                Panel(title: "CPU activity", subtitle: "LAST 2 MINUTES", symbol: "cpu") {
+                Panel(title: "CPU activity", subtitle: "LAST 2 MINUTES", symbol: "cpu",
+                      inspection: ChartMetric.cpu.inspection(in: monitor.history, at: selectedCPUDate, seconds: 120)) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text(Format.percent(monitor.snapshot.cpu)).font(.system(size: 29, weight: .medium, design: .rounded)).monospacedDigit()
-                        Text("% utilization").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                        Text("% total · \(monitor.isPaused ? "Paused" : "Live")").font(.system(size: 11)).foregroundStyle(Palette.muted)
                         Spacer()
                         DotLabel(text: "User", color: Palette.mint)
                         DotLabel(text: "System", color: Palette.blue)
                     }
-                    TimeChart(history: monitor.history, color: Palette.mint, value: { $0.cpuUser }, secondary: { $0.cpuSystem }).frame(height: 137)
+                    TimeChart(history: monitor.history, color: Palette.mint, value: { $0.cpu == nil ? nil : $0.cpuUser }, secondary: { $0.cpu == nil ? nil : $0.cpuSystem }, selection: $selectedCPUDate).frame(height: 137)
                     HStack {
                         Text("\(Format.percent(monitor.snapshot.cpuUser))% user  ·  \(Format.percent(monitor.snapshot.cpuSystem))% system").font(.system(size: 10)).foregroundStyle(Palette.muted)
                         Spacer()
                         Text("\(Format.percent(monitor.snapshot.cpu.map { 100 - $0 }))% idle").font(.system(size: 10)).foregroundStyle(Palette.mint)
                     }
                 }
-                Panel(title: "GPU activity", subtitle: "LAST 2 MINUTES", symbol: "display", color: Palette.purple) {
+                Panel(title: "GPU activity", subtitle: "LAST 2 MINUTES", symbol: "display", color: Palette.purple,
+                      inspection: ChartMetric.gpu.inspection(in: monitor.history, at: selectedGPUDate, seconds: 120)) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text(Format.percent(monitor.snapshot.gpu.utilization)).font(.system(size: 29, weight: .medium, design: .rounded)).monospacedDigit()
                         Text("% utilization").font(.system(size: 11)).foregroundStyle(Palette.muted)
                         Spacer()
                         DotLabel(text: "Device", color: Palette.purple)
                     }
-                    TimeChart(history: monitor.history, color: Palette.purple, value: { $0.gpu.utilization }).frame(height: 137)
+                    TimeChart(history: monitor.history, color: Palette.purple, value: { $0.gpu.utilization }, selection: $selectedGPUDate).frame(height: 137)
                     Text(monitor.snapshot.gpu.utilization == nil ? "GPU counters are unavailable on this Mac." : "\(monitor.snapshot.gpu.name)  ·  \(monitor.snapshot.gpu.cores.map { "\($0) GPU cores" } ?? "Hardware accelerated")")
                         .font(.system(size: 10)).foregroundStyle(Palette.muted)
                 }
             }
             HStack(alignment: .top, spacing: 18) {
                 memoryPanel.frame(maxWidth: .infinity)
-                Panel(title: "Top processes", subtitle: "CPU · REFRESHES EVERY 5s", symbol: "list.bullet.rectangle") {
+                Panel(title: "Top processes", subtitle: "PHYSICAL FOOTPRINT", symbol: "list.bullet.rectangle") {
                     ProcessList(processes: Array(monitor.processes.prefix(5)), compact: true)
                     Button { monitor.selected = .processes } label: {
                         HStack { Text("View all \(monitor.processes.count) processes"); Spacer(); Image(systemName: "arrow.up.right") }.font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.mint)
@@ -148,9 +161,10 @@ struct DashboardView: View {
                     StatRow(label: "Available", value: monitor.snapshot.disk.total > 0 ? Format.bytes(monitor.snapshot.disk.available) : "Unavailable")
                     StatRow(label: "Read / write", value: "\(Format.rate(monitor.snapshot.disk.activity?.incoming)) / \(Format.rate(monitor.snapshot.disk.activity?.outgoing))")
                 }
-                Panel(title: "Network activity", symbol: "network", color: Palette.cyan) {
+                Panel(title: "Network activity", symbol: "network", color: Palette.cyan,
+                      inspection: ChartMetric.network.inspection(in: monitor.history, at: selectedNetworkDate, seconds: 120)) {
                     HStack(spacing: 22) { DotLabel(text: "Download", color: Palette.cyan); DotLabel(text: "Upload", color: Palette.blue) }
-                    TimeChart(history: monitor.history, color: Palette.cyan, maximum: nil, value: { $0.network?.incoming }, secondary: { $0.network?.outgoing }).frame(height: 64)
+                    TimeChart(history: monitor.history, color: Palette.cyan, maximum: nil, unit: .rate, value: { $0.network?.incoming }, secondary: { $0.network?.outgoing }, selection: $selectedNetworkDate).frame(height: 64)
                 }
             }
         }

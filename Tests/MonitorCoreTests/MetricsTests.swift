@@ -45,13 +45,14 @@ struct MetricsTests {
         #expect(memory.available == 0)
         #expect(memory.percent == 100)
     }
-    @Test func processPathsWithSpacesAndMulticoreCPU() {
-        let process = ProcessMetric.parse("  123  245.5  2048 /Applications/My Great App.app/Contents/MacOS/My Great App"[...])
-        #expect(process?.pid == 123)
-        #expect(process?.name == "My Great App")
-        #expect(process?.cpu == 245.5)
-        #expect(process?.memory == 2_097_152)
-        #expect(ProcessMetric.parse("invalid"[...]) == nil)
+    @Test func processCPUUsesIntervalAndIdentity() {
+        let old = ProcessCPUCounters(birthID: 10, nanoseconds: 1_000_000_000, uptime: 20)
+        let new = ProcessCPUCounters(birthID: 10, nanoseconds: 6_000_000_000, uptime: 22)
+        #expect(new.percent(since: old) == 250)
+        #expect(new.percent(since: nil) == nil)
+        #expect(new.percent(since: new) == nil)
+        #expect(ProcessCPUCounters(birthID: 11, nanoseconds: 6_000_000_000, uptime: 22).percent(since: old) == nil)
+        #expect(ProcessCPUCounters(birthID: 10, nanoseconds: 0, uptime: 22).percent(since: old) == nil)
     }
     @Test func formattingUnavailableAndUptime() {
         #expect(Format.rate(nil) == "—")
