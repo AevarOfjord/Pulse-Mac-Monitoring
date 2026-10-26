@@ -44,7 +44,7 @@ struct SettingsView: View {
                 Text("Apple silicon · macOS 14+ · Locally signed preview")
                 Text("Developer ID signing and notarization require an Apple Developer Program membership. The release scripts support this when one is available.").font(.caption).foregroundStyle(.secondary)
                 if let error = monitor.settingsError {
-                    Text(error).foregroundStyle(.orange).font(.caption).textSelection(.enabled)
+                    Text(error).foregroundStyle(Palette.amber).font(.caption).textSelection(.enabled)
                     Button("Dismiss error") { monitor.settingsError = nil }
                 }
             }

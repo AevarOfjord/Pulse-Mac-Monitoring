@@ -2,9 +2,11 @@
 
 A native, local-only performance monitor for **Apple silicon Macs (M1 and newer), targeting macOS 14 Sonoma or later**. Built with SwiftUI and native macOS counters. No account, server, third-party dependencies, administrator password, or privileged helper.
 
+Dashboards, charts, settings, and menu-bar panels follow macOS Light/Dark appearance. The menu-bar panel keeps Dashboard, pause/resume, Settings, and Quit in one compact action row. For Wi-Fi health and protection checks, see the separate [Pulse WiFi app](https://github.com/AevarOfjord/Pulse-Mac-Wifi).
+
 ## Install
 
-Download the [Pulse 2.0 preview ZIP](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/releases/download/v2.0.0-preview.1/Pulse-2.0-AppleSilicon-Preview.zip), or visit [Releases](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/releases/tag/v2.0.0-preview.1) for the checksum and notes. GitHub's “Source code” archives contain the project, not an app. Extract the ZIP, drag **Pulse.app** into Applications, and open it.
+Download the [Pulse 2.0 preview ZIP](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/releases/download/v2.0.0-preview.2/Pulse-2.0-AppleSilicon-Preview.zip), or visit [Releases](https://github.com/AevarOfjord/Pulse-Mac-Monitoring/releases/tag/v2.0.0-preview.2) for the checksum and notes. GitHub's “Source code” archives contain the project, not an app. Extract the ZIP, drag **Pulse.app** into Applications, and open it.
 
 Preview builds are locally signed and **not notarized**. If macOS blocks a download you trust, use **System Settings → Privacy & Security → Open Anyway**, following [Apple's instructions](https://support.apple.com/102445). Never disable Gatekeeper globally. Building from source is also available.
 

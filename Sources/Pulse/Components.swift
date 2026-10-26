@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import Charts
 import MonitorCore
 
@@ -7,16 +8,27 @@ import MonitorCore
 typealias ViewState<Value> = SwiftUI.State<Value>
 
 enum Palette {
-    static let background = Color(hex: 0x0D1117)
-    static let sidebar = Color(hex: 0x10161E)
-    static let panel = Color(hex: 0x141B24)
-    static let border = Color(hex: 0x26313E)
-    static let muted = Color(hex: 0x8290A4)
-    static let mint = Color(hex: 0x74E2BE)
-    static let blue = Color(hex: 0x79A9FF)
-    static let purple = Color(hex: 0xB49AFF)
-    static let amber = Color(hex: 0xE9B978)
-    static let cyan = Color(hex: 0x6BD2E3)
+    static let background = adaptive(light: 0xF4F6F8, dark: 0x0D1117)
+    static let sidebar = adaptive(light: 0xECEFF3, dark: 0x10161E)
+    static let panel = adaptive(light: 0xFFFFFF, dark: 0x141B24)
+    static let border = adaptive(light: 0xD4DCE5, dark: 0x26313E)
+    static let muted = adaptive(light: 0x536174, dark: 0x8290A4)
+    static let mint = adaptive(light: 0x006B50, dark: 0x74E2BE)
+    static let blue = adaptive(light: 0x245CCD, dark: 0x79A9FF)
+    static let purple = adaptive(light: 0x6E4ABD, dark: 0xB49AFF)
+    static let amber = adaptive(light: 0x915410, dark: 0xE9B978)
+    static let cyan = adaptive(light: 0x00697B, dark: 0x6BD2E3)
+
+    // Resolve against the drawing view's appearance, rather than caching the
+    // system appearance at launch. Windows and menu extras update live.
+    private static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let value = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: Double((value >> 16) & 255) / 255,
+                           green: Double((value >> 8) & 255) / 255,
+                           blue: Double(value & 255) / 255, alpha: 1)
+        })
+    }
 }
 
 extension Color {

@@ -6,7 +6,6 @@ import MonitorCore
     var body: some Scene {
         WindowGroup("Pulse", id: "dashboard") {
             DashboardView().environmentObject(monitor)
-                .preferredColorScheme(.dark)
                 .frame(minWidth: 1060, minHeight: 730)
         }
         .defaultSize(width: 1320, height: 920)
@@ -23,7 +22,7 @@ import MonitorCore
                 }
             }
         }
-        Settings { SettingsView().environmentObject(monitor).preferredColorScheme(.dark) }
+        Settings { SettingsView().environmentObject(monitor) }
         MenuBarExtra {
             MenuBarView().environmentObject(monitor)
         } label: {
@@ -45,11 +44,21 @@ struct MenuBarView: View {
             menuRow("GPU", value: monitor.snapshot.gpu.utilization.map { "\(Format.percent($0))%" } ?? "Unavailable", color: Palette.purple)
             menuRow("Memory", value: monitor.snapshot.memory.map { "\(Format.bytes($0.used)) / \(Format.bytes($0.total))" } ?? "Unavailable", color: Palette.blue)
             Divider()
-            Button("Open Dashboard") { openWindow(id: "dashboard"); NSApp.activate(ignoringOtherApps: true) }
-            Button(monitor.isPaused ? "Resume Sampling" : "Pause Sampling", action: monitor.togglePause)
-            Button("Quit Pulse") { NSApp.terminate(nil) }
-            SettingsLink { Text("Settings…") }
-        }.padding(20).frame(width: 290).preferredColorScheme(.dark)
+            HStack(spacing: 8) {
+                Button { openWindow(id: "dashboard"); NSApp.activate(ignoringOtherApps: true) } label: {
+                    Label("Dashboard", systemImage: "arrow.up.right").font(.system(size: 11, weight: .medium))
+                }.accessibilityLabel("Open Dashboard").help("Open dashboard")
+                Spacer(minLength: 0)
+                Button(action: monitor.togglePause) {
+                    Image(systemName: monitor.isPaused ? "play.fill" : "pause.fill").frame(width: 24, height: 24)
+                }.accessibilityLabel(monitor.isPaused ? "Resume sampling" : "Pause sampling")
+                    .help(monitor.isPaused ? "Resume sampling" : "Pause sampling")
+                SettingsLink { Image(systemName: "gearshape").frame(width: 24, height: 24) }
+                    .accessibilityLabel("Settings").help("Settings")
+                Button { NSApp.terminate(nil) } label: { Image(systemName: "power").frame(width: 24, height: 24) }
+                    .accessibilityLabel("Quit Pulse").help("Quit Pulse")
+            }.buttonStyle(.borderless).font(.system(size: 12)).foregroundStyle(.secondary)
+        }.padding(20).frame(width: 290)
     }
     private func menuRow(_ title: String, value: String, color: Color) -> some View {
         HStack { Circle().fill(color).frame(width: 6, height: 6); Text(title); Spacer(); Text(value).monospacedDigit().foregroundStyle(.secondary) }.font(.system(size: 12))
